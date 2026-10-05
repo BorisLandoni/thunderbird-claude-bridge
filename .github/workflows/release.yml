@@ -1,0 +1,65 @@
+name: Release estensione
+
+# A ogni modifica di extension/ costruisce l'XPI, lo pubblica come release
+# e aggiorna updates.json: Thunderbird lo legge (update_url) e si aggiorna da solo.
+on:
+  push:
+    branches: [main]
+    paths: ["extension/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versione (1.0.<n. esecuzione>)
+        id: v
+        run: echo "version=1.0.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepara cartella di build con la nuova versione
+        run: |
+          mkdir build
+          cp -r extension/. build/
+          jq --arg v "${{ steps.v.outputs.version }}" '.version = $v' extension/manifest.json > build/manifest.json
+
+      - name: Firma (solo se ci sono le chiavi ATN)
+        id: sign
+        env:
+          ATN_KEY: ${{ secrets.ATN_JWT_ISSUER }}
+          ATN_SECRET: ${{ secrets.ATN_JWT_SECRET }}
+        run: |
+          if [ -n "$ATN_KEY" ] && [ -n "$ATN_SECRET" ]; then
+            npx --yes web-ext sign --source-dir build --channel unlisted \
+              --amo-base-url https://addons.thunderbird.net/api/v4 \
+              --api-key "$ATN_KEY" --api-secret "$ATN_SECRET"
+            cp web-ext-artifacts/*.xpi claude-bridge.xpi
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            (cd build && zip -r ../claude-bridge.xpi .)
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Release su GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.v.outputs.version }}" claude-bridge.xpi \
+            --title "v${{ steps.v.outputs.version }}" \
+            --notes "Firmata: ${{ steps.sign.outputs.signed }}"
+
+      - name: Aggiorna updates.json
+        run: |
+          HASH=$(sha256sum claude-bridge.xpi | cut -d' ' -f1)
+          URL="https://github.com/${{ github.repository }}/releases/download/v${{ steps.v.outputs.version }}/claude-bridge.xpi"
+          jq -n --arg v "${{ steps.v.outputs.version }}" --arg u "$URL" --arg h "sha256:$HASH" \
+            '{addons: {"claude-bridge@boris.local": {updates: [{version: $v, update_link: $u, update_hash: $h}]}}}' > updates.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add updates.json
+          git commit -m "updates.json -> ${{ steps.v.outputs.version }}"
+          git push

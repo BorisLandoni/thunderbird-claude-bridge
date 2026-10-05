@@ -1,0 +1,4 @@
+*.xpi
+web-ext-artifacts/
+build/
+__pycache__/

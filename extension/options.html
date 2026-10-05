@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Claude Bridge</title>
+<style>
+  body { font: 14px system-ui, sans-serif; max-width: 520px; margin: 24px; }
+  label { display: block; margin: 14px 0 4px; font-weight: 600; }
+  input { width: 100%; padding: 6px; box-sizing: border-box; }
+  button { margin-top: 16px; padding: 6px 14px; }
+  #st { margin-top: 12px; color: #555; }
+</style>
+<h2>Claude Bridge</h2>
+<p>Estensione in <b>sola lettura</b>: non invia, non sposta e non cancella nulla.</p>
+<label for="port">Porta del server locale</label>
+<input id="port" type="number" value="8765">
+<label for="token">Token (dal file <code>%USERPROFILE%\.thunderbird-bridge\token</code>)</label>
+<input id="token" type="password" autocomplete="off">
+<button id="save">Salva</button>
+<div id="st"></div>
+<script src="options.js"></script>
