@@ -67,13 +67,26 @@ class Bridge(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):
-        if self.path != "/result" or not self._auth():
-            if self.path != "/result":
+        if self.path not in ("/result", "/rpc") or not self._auth():
+            if self.path not in ("/result", "/rpc"):
                 self.send_response(404)
                 self.end_headers()
             return
         n = int(self.headers.get("Content-Length", "0"))
         data = json.loads(self.rfile.read(n) or b"{}")
+        if self.path == "/rpc":
+            # un'altra istanza del server (altra sessione di Claude) ci gira la richiesta
+            try:
+                out = {"ok": True, "result": ask_thunderbird(data["method"], data.get("params") or {}, local=True)}
+            except Exception as e:
+                out = {"ok": False, "error": str(e)}
+            body = json.dumps(out).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         with lock:
             slot = pending.get(data.get("id"))
         if slot:
@@ -83,18 +96,61 @@ class Bridge(BaseHTTPRequestHandler):
         self.end_headers()
 
 
+class ExclusiveServer(ThreadingHTTPServer):
+    # Su Windows SO_REUSEADDR permette a DUE processi di ascoltare sulla stessa porta
+    # (le richieste si dividono a caso): lo disattiviamo, cosi' il secondo fallisce e fa da proxy.
+    allow_reuse_address = False
+    daemon_threads = True
+
+
+is_primary = False
+
+
 def start_http():
+    """Prova a diventare l'istanza che ascolta sulla porta. Ritorna True se ci riesce."""
+    global is_primary
+    if is_primary:
+        return True
     try:
-        srv = ThreadingHTTPServer(("127.0.0.1", PORT), Bridge)
-    except OSError as e:
-        log(f"Porta {PORT} occupata ({e}). Chiudi l'altra istanza o imposta TB_BRIDGE_PORT.")
-        return
+        srv = ExclusiveServer(("127.0.0.1", PORT), Bridge)
+    except OSError:
+        log(f"Porta {PORT} gia' in uso: inoltro le richieste all'altra istanza.")
+        return False
     threading.Thread(target=srv.serve_forever, daemon=True).start()
+    is_primary = True
     log(f"Ponte Thunderbird in ascolto su 127.0.0.1:{PORT}")
+    return True
 
 
-def ask_thunderbird(method, params, timeout=40):
+def proxy_to_primary(method, params, timeout):
+    import urllib.request
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{PORT}/rpc",
+        data=json.dumps({"method": method, "params": params}).encode(),
+        headers={"X-Bridge-Token": TOKEN, "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout + 10) as r:
+        out = json.loads(r.read())
+    if not out.get("ok"):
+        raise RuntimeError(out.get("error", "errore sconosciuto"))
+    return out["result"]
+
+
+def ask_thunderbird(method, params, timeout=40, local=False):
     import time
+    if not local and not is_primary:
+        # Se l'istanza primaria e' sparita (sessione chiusa) prova a prenderne il posto.
+        if not start_http():
+            try:
+                return proxy_to_primary(method, params, timeout)
+            except OSError:
+                if not start_http():
+                    raise RuntimeError("Il ponte locale non risponde: riavvia Claude Code.")
+    # Appena avviato il server l'estensione puo' essere ancora in backoff (max 15 s):
+    # aspetta un po' il primo poll invece di dare subito "non collegato".
+    deadline = time.time() + 20
+    while time.time() - last_poll > 60 and time.time() < deadline:
+        time.sleep(0.5)
     if time.time() - last_poll > 60:
         raise RuntimeError(
             "Thunderbird non e' collegato: aprilo, controlla che l'estensione 'Claude Bridge' sia attiva "
