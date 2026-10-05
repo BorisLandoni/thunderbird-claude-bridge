@@ -1,7 +1,13 @@
 {
   "addons": {
     "claude-bridge@boris.local": {
-      "updates": []
+      "updates": [
+        {
+          "version": "1.0.1",
+          "update_link": "https://github.com/BorisLandoni/thunderbird-claude-bridge/releases/download/v1.0.1/claude-bridge.xpi",
+          "update_hash": "sha256:36c294fdfbd999fcf7a7c6a2bf266d60cdfc83c06d6ada4f13de800c368dce04"
+        }
+      ]
     }
   }
 }
