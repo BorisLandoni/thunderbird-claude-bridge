@@ -347,6 +347,9 @@ def handle(msg):
 
 
 def main():
+    # Windows: stdin/stdout di default sono cp1252, ma MCP parla UTF-8
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
     start_http()
     for line in sys.stdin:
         line = line.strip()
