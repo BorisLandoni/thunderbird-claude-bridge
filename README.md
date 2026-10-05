@@ -1,6 +1,8 @@
 # Claude Bridge per Thunderbird
 
-Estensione di **sola lettura** + server MCP locale: permette a Claude di leggere e cercare le mail di Thunderbird.
+Estensione + server MCP locale: permette a Claude di leggere e cercare le mail di Thunderbird, preparare bozze/risposte/inoltri, sistemare etichette, spostare e cestinare.
+
+**Mai invio diretto** (le mail si inviano a mano dalla finestra di scrittura) e **mai cancellazione permanente** (solo Cestino, con conferma).
 
 ```
 Claude <-stdio/MCP-> server.py <-HTTP 127.0.0.1 + token-> estensione in Thunderbird

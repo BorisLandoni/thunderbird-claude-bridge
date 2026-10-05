@@ -84,7 +84,37 @@ function extractBody(part) {
   return plain.trim() || stripHtml(html);
 }
 
-// ---------- comandi (solo lettura) ----------
+
+async function identityByEmail(email) {
+  for (const a of await browser.accounts.list()) {
+    for (const i of a.identities || []) if (i.email.toLowerCase() === email.toLowerCase()) return i.id;
+  }
+  throw new Error("Identita' non trovata: " + email);
+}
+
+const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+async function prependText(tab, text) {
+  const d = await browser.compose.getComposeDetails(tab.id);
+  if (d.isPlainText) {
+    await browser.compose.setComposeDetails(tab.id, { plainTextBody: text + "\n\n" + (d.plainTextBody || "") });
+  } else {
+    const block = "<div>" + esc(text).replace(/\n/g, "<br>") + "</div><br>";
+    const html = d.body || "";
+    const m = html.match(/<body[^>]*>/i);
+    const out = m ? html.replace(m[0], m[0] + block) : block + html;
+    await browser.compose.setComposeDetails(tab.id, { body: out });
+  }
+}
+
+async function finishCompose(tab, saveOnly) {
+  if (!saveOnly) return { status: "finestra di scrittura aperta in Thunderbird, da rileggere e inviare a mano" };
+  await browser.compose.saveMessage(tab.id, { mode: "draft" });
+  try { await browser.windows.remove(tab.windowId); } catch (e) {}
+  return { status: "bozza salvata nella cartella Bozze" };
+}
+
+// ---------- comandi ----------
 const handlers = {
   async status() {
     const v = await browser.runtime.getBrowserInfo();
@@ -137,6 +167,74 @@ const handlers = {
       attachments = (await browser.messages.listAttachments(id)).map((a) => ({ name: a.name, type: a.contentType, size: a.size }));
     } catch (e) {}
     return { ...brief(header), attachments, truncated, body };
+  },
+  // ---------- scrittura (mai invio diretto) ----------
+  async list_identities() {
+    const out = [];
+    for (const a of await browser.accounts.list()) {
+      for (const i of a.identities || []) out.push({ identityId: i.id, email: i.email, name: i.name, account: a.name });
+    }
+    return out;
+  },
+
+  async list_tags() {
+    return browser.messages.tags.list();
+  },
+
+  // Apre una finestra di scrittura precompilata (o salva solo la bozza). NON invia.
+  async create_draft({ to, cc, bcc, subject, body = "", html = false, from, saveOnly = false }) {
+    const d = { subject: subject || "" };
+    if (to) d.to = to;
+    if (cc) d.cc = cc;
+    if (bcc) d.bcc = bcc;
+    if (html) { d.body = body; d.isPlainText = false; } else { d.plainTextBody = body; d.isPlainText = true; }
+    if (from) d.identityId = await identityByEmail(from);
+    const tab = await browser.compose.beginNew(d);
+    return finishCompose(tab, saveOnly);
+  },
+
+  async create_reply({ id, text, replyAll = false, saveOnly = false }) {
+    const tab = await browser.compose.beginReply(id, replyAll ? "replyToAll" : "replyToSender");
+    await prependText(tab, text);
+    return finishCompose(tab, saveOnly);
+  },
+
+  async create_forward({ id, to, text = "", saveOnly = false }) {
+    const tab = await browser.compose.beginForward(id, "forwardInline", to ? { to } : undefined);
+    if (text) await prependText(tab, text);
+    return finishCompose(tab, saveOnly);
+  },
+
+  async update_messages({ ids, read, flagged, junk, addTags, removeTags }) {
+    const done = [];
+    for (const id of ids) {
+      const upd = {};
+      if (read !== undefined) upd.read = read;
+      if (flagged !== undefined) upd.flagged = flagged;
+      if (junk !== undefined) upd.junk = junk;
+      if (addTags || removeTags) {
+        const cur = new Set((await browser.messages.get(id)).tags || []);
+        (addTags || []).forEach((t) => cur.add(t));
+        (removeTags || []).forEach((t) => cur.delete(t));
+        upd.tags = [...cur];
+      }
+      await browser.messages.update(id, upd);
+      done.push(id);
+    }
+    return { updated: done };
+  },
+
+  async move_messages({ ids, folder, copy = false }) {
+    const f = await resolveFolder(folder);
+    const dest = f.id ? f.id : f;
+    if (copy) await browser.messages.copy(ids, dest); else await browser.messages.move(ids, dest);
+    return { [copy ? "copied" : "moved"]: ids, to: folder };
+  },
+
+  // Solo verso il Cestino (nessuna cancellazione permanente).
+  async trash_messages({ ids }) {
+    await browser.messages.delete(ids);
+    return { trashed: ids };
   },
 };
 

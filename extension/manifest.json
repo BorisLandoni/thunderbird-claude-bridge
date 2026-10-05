@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
-  "name": "Claude Bridge (sola lettura)",
+  "name": "Claude Bridge",
   "version": "1.0.0",
-  "description": "Collega Thunderbird a un server locale (127.0.0.1) cosi' Claude puo' leggere e cercare le mail. Sola lettura.",
+  "description": "Collega Thunderbird a un server locale (127.0.0.1) cosi' Claude puo' leggere e cercare le mail. Scrive solo bozze: non invia mai da solo.",
   "browser_specific_settings": {
     "gecko": { "id": "claude-bridge@boris.local", "strict_min_version": "115.0", "update_url": "https://raw.githubusercontent.com/BorisLandoni/thunderbird-claude-bridge/main/updates.json" }
   },
@@ -11,6 +11,11 @@
   "permissions": [
     "accountsRead",
     "messagesRead",
+    "messagesUpdate",
+    "messagesMove",
+    "messagesDelete",
+    "messagesTags",
+    "compose",
     "storage",
     "http://127.0.0.1/*"
   ]

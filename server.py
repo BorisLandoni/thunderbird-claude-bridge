@@ -192,6 +192,113 @@ TOOLS = [
         },
         "method": "get_message",
     },
+    {
+        "name": "tb_list_identities",
+        "description": "Elenca le identita' (indirizzi mittente) disponibili per scrivere.",
+        "inputSchema": {"type": "object", "properties": {}},
+        "method": "list_identities",
+    },
+    {
+        "name": "tb_list_tags",
+        "description": "Elenca le etichette (tag) di Thunderbird con la loro chiave.",
+        "inputSchema": {"type": "object", "properties": {}},
+        "method": "list_tags",
+    },
+    {
+        "name": "tb_create_draft",
+        "description": "Prepara una NUOVA mail. Di default apre la finestra di scrittura in Thunderbird perche' l'utente la riveda e la invii lui; con saveOnly salva solo in Bozze. Non invia mai."
+        + " Mostra prima all'utente il testo che intendi scrivere.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "to": {"type": "array", "items": {"type": "string"}},
+                "cc": {"type": "array", "items": {"type": "string"}},
+                "bcc": {"type": "array", "items": {"type": "string"}},
+                "subject": {"type": "string"},
+                "body": {"type": "string"},
+                "html": {"type": "boolean", "default": False},
+                "from": {"type": "string", "description": "Indirizzo mittente (vedi tb_list_identities)"},
+                "saveOnly": {"type": "boolean", "default": False},
+            },
+            "required": ["subject", "body"],
+        },
+        "method": "create_draft",
+    },
+    {
+        "name": "tb_create_reply",
+        "description": "Prepara una RISPOSTA alla mail con quell'id (citazione inclusa). Apre la finestra per la revisione, o salva in Bozze con saveOnly. Non invia mai.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer"},
+                "text": {"type": "string", "description": "Testo della risposta, messo sopra la citazione"},
+                "replyAll": {"type": "boolean", "default": False},
+                "saveOnly": {"type": "boolean", "default": False},
+            },
+            "required": ["id", "text"],
+        },
+        "method": "create_reply",
+    },
+    {
+        "name": "tb_create_forward",
+        "description": "Prepara l'INOLTRO della mail con quell'id. Apre la finestra per la revisione, o salva in Bozze con saveOnly. Non invia mai.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer"},
+                "to": {"type": "array", "items": {"type": "string"}},
+                "text": {"type": "string"},
+                "saveOnly": {"type": "boolean", "default": False},
+            },
+            "required": ["id"],
+        },
+        "method": "create_forward",
+    },
+    {
+        "name": "tb_update_messages",
+        "description": "Segna come letta/non letta, con stella, spam, aggiunge o toglie etichette (chiavi da tb_list_tags) a una o piu' mail.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ids": {"type": "array", "items": {"type": "integer"}},
+                "read": {"type": "boolean"},
+                "flagged": {"type": "boolean"},
+                "junk": {"type": "boolean"},
+                "addTags": {"type": "array", "items": {"type": "string"}},
+                "removeTags": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["ids"],
+        },
+        "method": "update_messages",
+    },
+    {
+        "name": "tb_move_messages",
+        "description": "Sposta (o copia) mail in un'altra cartella. Elenca prima all'utente cosa sposti e dove, e chiedi conferma se sono molte." ,
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ids": {"type": "array", "items": {"type": "integer"}},
+                "folder": {"type": "string", "description": FOLDER_HELP},
+                "copy": {"type": "boolean", "default": False},
+            },
+            "required": ["ids", "folder"],
+        },
+        "method": "move_messages",
+    },
+    {
+        "name": "tb_trash_messages",
+        "description": "Manda mail nel Cestino (mai cancellazione permanente). Imposta confirmed=true SOLO dopo che l'utente ha confermato in chat l'elenco esatto di mail da cestinare.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ids": {"type": "array", "items": {"type": "integer"}},
+                "confirmed": {"type": "boolean"},
+            },
+            "required": ["ids", "confirmed"],
+        },
+        "method": "trash_messages",
+        "needs_confirm": True,
+    },
 ]
 BY_NAME = {t["name"]: t for t in TOOLS}
 
@@ -225,8 +332,13 @@ def handle(msg):
         if not tool:
             reply(mid, error={"code": -32602, "message": "Tool sconosciuto"})
             return
+        args = p.get("arguments") or {}
+        if tool.get("needs_confirm"):
+            if args.pop("confirmed", False) is not True:
+                reply(mid, {"content": [{"type": "text", "text": "Serve la conferma esplicita dell'utente: mostra l'elenco delle mail e chiedi."}], "isError": True})
+                return
         try:
-            res = ask_thunderbird(tool["method"], p.get("arguments") or {})
+            res = ask_thunderbird(tool["method"], args)
             reply(mid, {"content": [{"type": "text", "text": json.dumps(res, ensure_ascii=False, indent=1)}]})
         except Exception as e:
             reply(mid, {"content": [{"type": "text", "text": str(e)}], "isError": True})
