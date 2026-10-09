@@ -238,6 +238,31 @@ const handlers = {
   },
 };
 
+// ---------- esecuzione comandi ----------
+const COMMAND_TIMEOUT_MS = 35000;
+
+async function runCommand(cmd, base, headers) {
+  let payload;
+  try {
+    const h = handlers[cmd.method];
+    if (!h) throw new Error("Metodo sconosciuto: " + cmd.method);
+    let timer;
+    const timeout = new Promise((_, rej) => {
+      timer = setTimeout(() => rej(new Error("Thunderbird troppo lento: operazione interrotta")), COMMAND_TIMEOUT_MS);
+    });
+    try {
+      payload = { id: cmd.id, ok: true, result: await Promise.race([h(cmd.params || {}), timeout]) };
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (e) {
+    payload = { id: cmd.id, ok: false, error: String((e && e.message) || e) };
+  }
+  try {
+    await fetch(`${base}/result`, { method: "POST", headers, body: JSON.stringify(payload) });
+  } catch (e) { /* il server scadra' da solo */ }
+}
+
 // ---------- loop di polling ----------
 async function loop() {
   let backoff = 1000;
@@ -251,15 +276,10 @@ async function loop() {
       if (r.status === 204 || !r.ok) { backoff = 1000; continue; }
       backoff = 1000;
       const cmd = await r.json();
-      let payload;
-      try {
-        const h = handlers[cmd.method];
-        if (!h) throw new Error("Metodo sconosciuto: " + cmd.method);
-        payload = { id: cmd.id, ok: true, result: await h(cmd.params || {}) };
-      } catch (e) {
-        payload = { id: cmd.id, ok: false, error: String((e && e.message) || e) };
-      }
-      await fetch(`${base}/result`, { method: "POST", headers, body: JSON.stringify(payload) });
+      // Il comando gira in parallelo e con un tempo massimo: se una chiamata a Thunderbird
+      // si blocca (es. ricerca su cartelle enormi) il polling non deve fermarsi, altrimenti
+      // il server vede l'estensione come "non collegata".
+      runCommand(cmd, base, headers);
     } catch (e) {
       await new Promise((res) => setTimeout(res, backoff));
       backoff = Math.min(backoff * 2, 15000);
