@@ -182,7 +182,7 @@ const handlers = {
   },
 
   // Apre una finestra di scrittura precompilata (o salva solo la bozza). NON invia.
-  async create_draft({ to, cc, bcc, subject, body = "", html = false, from, saveOnly = false }) {
+  async create_draft({ to, cc, bcc, subject, body = "", html = true, from, saveOnly = false }) {
     const d = { subject: subject || "" };
     if (to) d.to = to;
     if (cc) d.cc = cc;

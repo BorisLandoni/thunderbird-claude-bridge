@@ -272,7 +272,8 @@ TOOLS = [
                 "bcc": {"type": "array", "items": {"type": "string"}},
                 "subject": {"type": "string"},
                 "body": {"type": "string"},
-                "html": {"type": "boolean", "default": False},
+                "html": {"type": "boolean", "default": True,
+                         "description": "Di default il corpo e' HTML: scrivilo in HTML (<p>, <br>, <b>, <a>...). false solo se l'utente chiede testo semplice."},
                 "from": {"type": "string", "description": "Indirizzo mittente (vedi tb_list_identities)"},
                 "saveOnly": {"type": "boolean", "default": False},
             },
@@ -389,6 +390,8 @@ def handle(msg):
             reply(mid, error={"code": -32602, "message": "Tool sconosciuto"})
             return
         args = p.get("arguments") or {}
+        if tool["method"] == "create_draft":
+            args.setdefault("html", True)
         if tool.get("needs_confirm"):
             if args.pop("confirmed", False) is not True:
                 reply(mid, {"content": [{"type": "text", "text": "Serve la conferma esplicita dell'utente: mostra l'elenco delle mail e chiedi."}], "isError": True})
