@@ -2,6 +2,8 @@
 
 Estensione + server MCP locale: permette a Claude di leggere e cercare le mail di Thunderbird, preparare bozze/risposte/inoltri, sistemare etichette, spostare e cestinare.
 
+Gli allegati si scaricano con `tb_save_attachments`: finiscono in `%USERPROFILE%\.thunderbird-bridge\attachments\<id mail>\` (mai sovrascritti, nomi ripuliti). Il server e l'estensione vanno aggiornati insieme: dopo `git pull` riavvia Claude Code e aggiorna l'estensione (Strumenti -> Componenti aggiuntivi -> "Cerca aggiornamenti").
+
 **Mai invio diretto** (le mail si inviano a mano dalla finestra di scrittura) e **mai cancellazione permanente** (solo Cestino, con conferma).
 
 ```

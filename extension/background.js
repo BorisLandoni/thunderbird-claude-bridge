@@ -1,6 +1,7 @@
 // Claude Bridge: long-poll verso il server locale, esegue comandi di SOLA LETTURA.
 const DEFAULTS = { port: 8765, token: "" };
 const MAX_BODY_DEFAULT = 8000;
+const MAX_ATTACHMENT_DEFAULT = 50 * 1024 * 1024;
 
 async function cfg() {
   return browser.storage.local.get(DEFAULTS);
@@ -92,6 +93,15 @@ async function identityByEmail(email) {
   throw new Error("Identita' non trovata: " + email);
 }
 
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] || "");
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
 const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 async function prependText(tab, text) {
@@ -168,6 +178,23 @@ const handlers = {
     } catch (e) {}
     return { ...brief(header), attachments, truncated, body };
   },
+
+  // Restituisce il contenuto (base64) degli allegati: il server li salva su disco.
+  async get_attachments({ id, names, maxSize = MAX_ATTACHMENT_DEFAULT }) {
+    const all = await browser.messages.listAttachments(id);
+    const wanted = names && names.length
+      ? all.filter((a) => names.some((n) => a.name.toLowerCase().includes(String(n).toLowerCase())))
+      : all;
+    const files = [];
+    const skipped = [];
+    for (const a of wanted) {
+      if (a.size > maxSize) { skipped.push({ name: a.name, size: a.size, reason: "supera maxSize" }); continue; }
+      const file = await browser.messages.getAttachmentFile(id, a.partName);
+      files.push({ name: a.name, type: a.contentType, size: file.size, data: await fileToBase64(file) });
+    }
+    return { files, skipped, total: all.length };
+  },
+
   // ---------- scrittura (mai invio diretto) ----------
   async list_identities() {
     const out = [];
