@@ -119,7 +119,20 @@ async function prependText(tab, text) {
 
 async function finishCompose(tab, saveOnly) {
   if (!saveOnly) return { status: "finestra di scrittura aperta in Thunderbird, da rileggere e inviare a mano" };
+  // saveMessage puo' ritornare prima che il salvataggio sia finito: se si chiude subito la
+  // finestra, Thunderbird la salva una seconda volta (bozza doppia). Si aspetta onAfterSave.
+  const saved = new Promise((resolve) => {
+    const onSaved = (t) => {
+      if (t.id !== tab.id) return;
+      browser.compose.onAfterSave.removeListener(onSaved);
+      resolve();
+    };
+    browser.compose.onAfterSave.addListener(onSaved);
+    setTimeout(() => { browser.compose.onAfterSave.removeListener(onSaved); resolve(); }, 15000);
+  });
   await browser.compose.saveMessage(tab.id, { mode: "draft" });
+  await saved;
+  await new Promise((r) => setTimeout(r, 1000));
   try { await browser.windows.remove(tab.windowId); } catch (e) {}
   return { status: "bozza salvata nella cartella Bozze" };
 }
